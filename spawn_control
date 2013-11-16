@@ -1,0 +1,6 @@
+#!/bin/bash
+for udp in {9000..9199}
+do
+	station=$((udp % 1))
+	while true; do echo $station; station=$(((station + 1) % 1)); sleep 15; done | ./snowcast_control $1 $2 $udp > /dev/null 2>&1 &
+done

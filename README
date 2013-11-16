@@ -1,0 +1,63 @@
+README for Snowcast
+Josh Freilich
+jfreilic
+
+Design of program:
+Server:
+Server uses 1 thread for all of the TCP connections
+Server uses 1 additional thread for each station to stream UDP data
+i.e. 14 songs = 15 total threads
+
+All of the clients are stored as pointers to structs in a doubly linked list
+However, this list also maintains an additional list for each station
+Each client also has a station_next and station_prev field which are pointers
+to the next and previous clients on the same station as that client
+Each client is shared data
+Each client is "locked" with read/write locks when it is read/written to
+
+The other shared data is the pointers to the pointers to the first client struct on each station
+These are pointers to pointers so that the first client pointer for a station can be changed on the TCP thread
+The UDP station dereferences this pointer to get the first client pointer
+
+
+UDP server:
+Reads in a buffer of data (2KB) from the song
+This size is a multiple of the amount of data sent with each call to sendto
+For each packet size (512 bytes) in the buffer, the thread iterates through all of the clients
+using the linked list of clients on the station
+Then the thread calculates the amount of time to sleep
+This time is the time it takes to play the music (2KB/16KB * seconds) - the time it took to send it
+
+Announce/restart:
+The thread checks the size actually read into the buffer
+If this size is not the same as expected, after the send loop, the song is announced over TCP
+and the file descriptor seeks to 0
+This is obviously done on the UDP streaming thread, but the announce is still sent over TCP
+
+Listener:
+Pretty simple, just calls recvfrom and write after creating socket
+
+Control:
+Uses select to read from server or stdin on one thread asynchronously
+
+Testing:
+To really try to break my program, I wrote a script
+Run this script with hostname and tcpport as arguments
+spawn_control will spawn a large number of controls (configurable easily in file)
+these controls will change station frequently (also configurable in file)
+all controls will be connected to the same server
+I also run an additional control and listener to monitor the actual delay for sending/receiving a response
+as well as the bitrate/playback quality for a user when a large number of controls are connected
+and, it works perfectly!
+
+Notable problems/bugs:
+If a control only sends a command type, not an actual command, the server will wait forever calling read
+This could be fixed with packed structs, but I could not get this to work consistently (sometimes they wouldn't pack)
+
+On my machine, mpg123 seems to exit after the song is over (for some songs)
+However, if i run the listener without piping to mpg123, the bitrate remains constant when the song ends/repeats
+
+The control/server do not have identical printouts on my as on the sample.
+Most notably, my control does not have ">" prompt symbol.
+Also, when running the "p" command on my server, it prints out the listening port for each station but not the address.
+I couldn't get the addresses to print cleanly.
